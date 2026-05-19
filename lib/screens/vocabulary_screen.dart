@@ -408,6 +408,11 @@ class _WordCard extends ConsumerWidget {
                         )
                       : null,
                 ),
+              if ((word.exampleEn?.isNotEmpty ?? false) &&
+                  word.breakdown.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _BreakdownSection(tokens: word.breakdown),
+              ],
             ],
           ],
         ),
@@ -441,6 +446,123 @@ class _CardDetailRow extends StatelessWidget {
         Text(value, style: valueStyle),
         if (trailing != null) trailing!,
       ],
+    );
+  }
+}
+
+class _BreakdownSection extends StatefulWidget {
+  const _BreakdownSection({required this.tokens});
+  final List<Map<String, String>> tokens;
+
+  @override
+  State<_BreakdownSection> createState() => _BreakdownSectionState();
+}
+
+class _BreakdownSectionState extends State<_BreakdownSection>
+    with SingleTickerProviderStateMixin {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Word-by-word',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.royal,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                AnimatedRotation(
+                  turns: _expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: AppColors.royal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 240),
+          sizeCurve: Curves.easeOutCubic,
+          firstCurve: Curves.easeOutCubic,
+          secondCurve: Curves.easeOutCubic,
+          crossFadeState: _expanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          firstChild: const SizedBox(width: double.infinity, height: 0),
+          secondChild: Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 2),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final t in widget.tokens)
+                  _BreakdownPill(en: t['en'] ?? '', km: t['km'] ?? ''),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BreakdownPill extends StatelessWidget {
+  const _BreakdownPill({required this.en, required this.km});
+  final String en;
+  final String km;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.ice,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            en,
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.navy,
+              height: 1.2,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            km,
+            style: AppTheme.khmerDisplay(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              color: AppColors.muted,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -500,6 +622,7 @@ class _DeleteButton extends ConsumerWidget {
             explanationKm: word.explanationKm,
             exampleEn: word.exampleEn,
             exampleKm: word.exampleKm,
+            breakdownJson: word.breakdownJson,
           );
           await repo.delete(word.id);
           messenger.hideCurrentSnackBar();

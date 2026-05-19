@@ -27,13 +27,14 @@ class VocabularyWordAdapter extends TypeAdapter<VocabularyWord> {
       explanationKm: fields[7] as String?,
       exampleEn: fields[8] as String?,
       exampleKm: fields[9] as String?,
+      breakdownJson: fields[10] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, VocabularyWord obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -53,7 +54,9 @@ class VocabularyWordAdapter extends TypeAdapter<VocabularyWord> {
       ..writeByte(8)
       ..write(obj.exampleEn)
       ..writeByte(9)
-      ..write(obj.exampleKm);
+      ..write(obj.exampleKm)
+      ..writeByte(10)
+      ..write(obj.breakdownJson);
   }
 
   @override

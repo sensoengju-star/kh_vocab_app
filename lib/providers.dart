@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
@@ -71,6 +73,8 @@ final addWordProvider =
         explanationKm: t.explanationKm,
         exampleEn: t.exampleEn,
         exampleKm: t.exampleKm,
+        breakdownJson:
+            t.breakdown.isEmpty ? null : jsonEncode(t.breakdown),
       );
       return AddWordResult(id);
     } catch (e) {

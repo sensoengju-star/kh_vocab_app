@@ -54,6 +54,7 @@ class VocabularyRepository {
     String? explanationKm,
     String? exampleEn,
     String? exampleKm,
+    String? breakdownJson,
   }) async {
     final word = _box.get(id);
     if (word == null) return;
@@ -63,6 +64,7 @@ class VocabularyRepository {
     word.explanationKm = explanationKm;
     word.exampleEn = exampleEn;
     word.exampleKm = exampleKm;
+    word.breakdownJson = breakdownJson;
     await word.save();
   }
 

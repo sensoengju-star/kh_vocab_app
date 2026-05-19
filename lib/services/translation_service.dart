@@ -33,6 +33,10 @@ class Translation {
   /// Khmer translation of the English example sentence.
   final String exampleKm;
 
+  /// Word-by-word breakdown of the example sentence. Each entry maps a token
+  /// of the English sentence to its Khmer equivalent (`en` / `km`).
+  final List<Map<String, String>> breakdown;
+
   const Translation({
     required this.english,
     required this.khmer,
@@ -40,6 +44,7 @@ class Translation {
     required this.explanationKm,
     required this.exampleEn,
     required this.exampleKm,
+    required this.breakdown,
   });
 }
 
@@ -91,6 +96,7 @@ class TranslationService {
       explanationKm: result.explanationKm,
       exampleEn: result.exampleEn,
       exampleKm: result.exampleKm,
+      breakdown: result.breakdown,
     );
 
     await _cache.put(
@@ -101,6 +107,7 @@ class TranslationService {
         'explanationKm': hydrated.explanationKm,
         'exampleEn': hydrated.exampleEn,
         'exampleKm': hydrated.exampleKm,
+        'breakdown': hydrated.breakdown,
       }),
     );
 
@@ -110,6 +117,18 @@ class TranslationService {
   Translation? _tryDecodeCache(String raw, String input, String detected) {
     try {
       final m = jsonDecode(raw) as Map<String, dynamic>;
+      final rawBreakdown = m['breakdown'];
+      final breakdown = <Map<String, String>>[];
+      if (rawBreakdown is List) {
+        for (final entry in rawBreakdown) {
+          if (entry is Map) {
+            breakdown.add({
+              'en': (entry['en'] as String?) ?? '',
+              'km': (entry['km'] as String?) ?? '',
+            });
+          }
+        }
+      }
       return Translation(
         english: (m['english'] as String?) ?? (detected == 'en' ? input : ''),
         khmer: (m['khmer'] as String?) ?? (detected == 'km' ? input : ''),
@@ -117,6 +136,7 @@ class TranslationService {
         explanationKm: (m['explanationKm'] as String?) ?? '',
         exampleEn: (m['exampleEn'] as String?) ?? '',
         exampleKm: (m['exampleKm'] as String?) ?? '',
+        breakdown: breakdown,
       );
     } catch (_) {
       // Legacy cache entries stored just the translated string — re-fetch.
@@ -145,6 +165,7 @@ First, identify the language of the input. Then produce a strict JSON object wit
 - "explanation_km": a short, plain-Khmer explanation (one or two sentences) of what the word means, written entirely in Khmer script. Empty string if source_lang is "other".
 - "example_en": one natural English example sentence that uses the English form of the word. Empty string if source_lang is "other".
 - "example_km": the Khmer translation of "example_en", written entirely in Khmer script. It must be a faithful translation of the same sentence. Empty string if source_lang is "other".
+- "breakdown": an ordered array giving a word-by-word breakdown of "example_en". Each element is an object with two keys: "en" (one English word or short multi-word unit from the sentence, in the order it appears) and "km" (its Khmer equivalent in Khmer script). Cover every word in "example_en", including small function words like "the", "a", "is", in order. Use Khmer particles or short phrases where there is no exact one-word equivalent. Empty array if source_lang is "other".
 
 Be strict: if the input is romanized/transliterated Khmer (Khmer written in Latin letters) or any other non-English non-Khmer language, set source_lang to "other".
 
@@ -181,6 +202,17 @@ Input (script hint: $hint): $text
             'explanation_km': {'type': 'STRING'},
             'example_en': {'type': 'STRING'},
             'example_km': {'type': 'STRING'},
+            'breakdown': {
+              'type': 'ARRAY',
+              'items': {
+                'type': 'OBJECT',
+                'properties': {
+                  'en': {'type': 'STRING'},
+                  'km': {'type': 'STRING'},
+                },
+                'required': ['en', 'km'],
+              },
+            },
           },
           'required': [
             'source_lang',
@@ -189,6 +221,7 @@ Input (script hint: $hint): $text
             'explanation_km',
             'example_en',
             'example_km',
+            'breakdown',
           ],
         },
       },
@@ -249,6 +282,20 @@ Input (script hint: $hint): $text
       );
     }
 
+    final rawBreakdown = obj['breakdown'];
+    final breakdown = <Map<String, String>>[];
+    if (rawBreakdown is List) {
+      for (final entry in rawBreakdown) {
+        if (entry is Map) {
+          final en = ((entry['en'] as String?) ?? '').trim();
+          final km = ((entry['km'] as String?) ?? '').trim();
+          if (en.isNotEmpty || km.isNotEmpty) {
+            breakdown.add({'en': en, 'km': km});
+          }
+        }
+      }
+    }
+
     return Translation(
       english: _clean((obj['english'] as String?) ?? ''),
       khmer: _clean((obj['khmer'] as String?) ?? ''),
@@ -256,6 +303,7 @@ Input (script hint: $hint): $text
       explanationKm: ((obj['explanation_km'] as String?) ?? '').trim(),
       exampleEn: ((obj['example_en'] as String?) ?? '').trim(),
       exampleKm: ((obj['example_km'] as String?) ?? '').trim(),
+      breakdown: breakdown,
     );
   }
 
