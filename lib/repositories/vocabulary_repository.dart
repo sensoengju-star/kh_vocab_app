@@ -53,6 +53,7 @@ class VocabularyRepository {
     required String sourceLang,
     String? explanationKm,
     String? exampleEn,
+    String? exampleKm,
   }) async {
     final word = _box.get(id);
     if (word == null) return;
@@ -61,6 +62,7 @@ class VocabularyRepository {
     word.sourceLang = sourceLang;
     word.explanationKm = explanationKm;
     word.exampleEn = exampleEn;
+    word.exampleKm = exampleKm;
     await word.save();
   }
 

@@ -70,6 +70,7 @@ final addWordProvider =
         sourceLang: t.detectedLang,
         explanationKm: t.explanationKm,
         exampleEn: t.exampleEn,
+        exampleKm: t.exampleKm,
       );
       return AddWordResult(id);
     } catch (e) {

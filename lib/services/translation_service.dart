@@ -30,12 +30,16 @@ class Translation {
   /// English example sentence using the word.
   final String exampleEn;
 
+  /// Khmer translation of the English example sentence.
+  final String exampleKm;
+
   const Translation({
     required this.english,
     required this.khmer,
     required this.detectedLang,
     required this.explanationKm,
     required this.exampleEn,
+    required this.exampleKm,
   });
 }
 
@@ -86,6 +90,7 @@ class TranslationService {
       detectedLang: detected,
       explanationKm: result.explanationKm,
       exampleEn: result.exampleEn,
+      exampleKm: result.exampleKm,
     );
 
     await _cache.put(
@@ -95,6 +100,7 @@ class TranslationService {
         'khmer': khmer,
         'explanationKm': hydrated.explanationKm,
         'exampleEn': hydrated.exampleEn,
+        'exampleKm': hydrated.exampleKm,
       }),
     );
 
@@ -110,6 +116,7 @@ class TranslationService {
         detectedLang: detected,
         explanationKm: (m['explanationKm'] as String?) ?? '',
         exampleEn: (m['exampleEn'] as String?) ?? '',
+        exampleKm: (m['exampleKm'] as String?) ?? '',
       );
     } catch (_) {
       // Legacy cache entries stored just the translated string — re-fetch.
@@ -137,6 +144,7 @@ First, identify the language of the input. Then produce a strict JSON object wit
 - "khmer": the Khmer form of the word in Khmer script. Empty string if source_lang is "other".
 - "explanation_km": a short, plain-Khmer explanation (one or two sentences) of what the word means, written entirely in Khmer script. Empty string if source_lang is "other".
 - "example_en": one natural English example sentence that uses the English form of the word. Empty string if source_lang is "other".
+- "example_km": the Khmer translation of "example_en", written entirely in Khmer script. It must be a faithful translation of the same sentence. Empty string if source_lang is "other".
 
 Be strict: if the input is romanized/transliterated Khmer (Khmer written in Latin letters) or any other non-English non-Khmer language, set source_lang to "other".
 
@@ -172,6 +180,7 @@ Input (script hint: $hint): $text
             'khmer': {'type': 'STRING'},
             'explanation_km': {'type': 'STRING'},
             'example_en': {'type': 'STRING'},
+            'example_km': {'type': 'STRING'},
           },
           'required': [
             'source_lang',
@@ -179,6 +188,7 @@ Input (script hint: $hint): $text
             'khmer',
             'explanation_km',
             'example_en',
+            'example_km',
           ],
         },
       },
@@ -245,6 +255,7 @@ Input (script hint: $hint): $text
       detectedLang: detectedLang,
       explanationKm: ((obj['explanation_km'] as String?) ?? '').trim(),
       exampleEn: ((obj['example_en'] as String?) ?? '').trim(),
+      exampleKm: ((obj['example_km'] as String?) ?? '').trim(),
     );
   }
 

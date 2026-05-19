@@ -34,6 +34,10 @@ class VocabularyWord extends HiveObject {
   @HiveField(8)
   String? exampleEn;
 
+  /// Khmer translation of the English example sentence.
+  @HiveField(9)
+  String? exampleKm;
+
   VocabularyWord({
     required this.id,
     required this.english,
@@ -44,6 +48,7 @@ class VocabularyWord extends HiveObject {
     this.learnedAt,
     this.explanationKm,
     this.exampleEn,
+    this.exampleKm,
   });
 
   bool get isTranslated => english.isNotEmpty && khmer.isNotEmpty;

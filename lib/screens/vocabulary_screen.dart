@@ -394,6 +394,19 @@ class _WordCard extends ConsumerWidget {
                     fontStyle: FontStyle.italic,
                     height: 1.4,
                   ),
+                  trailing: (word.exampleKm?.isNotEmpty ?? false)
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            word.exampleKm!,
+                            style: AppTheme.khmerDisplay(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        )
+                      : null,
                 ),
             ],
           ],
@@ -409,12 +422,14 @@ class _CardDetailRow extends StatelessWidget {
     required this.value,
     required this.labelStyle,
     required this.valueStyle,
+    this.trailing,
   });
 
   final String label;
   final String value;
   final TextStyle labelStyle;
   final TextStyle valueStyle;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -424,6 +439,7 @@ class _CardDetailRow extends StatelessWidget {
         Text(label.toUpperCase(), style: labelStyle),
         const SizedBox(height: 3),
         Text(value, style: valueStyle),
+        if (trailing != null) trailing!,
       ],
     );
   }
@@ -483,6 +499,7 @@ class _DeleteButton extends ConsumerWidget {
             learnedAt: word.learnedAt,
             explanationKm: word.explanationKm,
             exampleEn: word.exampleEn,
+            exampleKm: word.exampleKm,
           );
           await repo.delete(word.id);
           messenger.hideCurrentSnackBar();
