@@ -3,14 +3,19 @@ import 'dart:convert';
 import 'package:hive/hive.dart';
 import 'package:http/http.dart' as http;
 
-// TODO: paste your Gemini API key here.
-// Get one (free tier available) at https://aistudio.google.com/app/apikey
-const String kGeminiApiKey = 'AIzaSyDT76mzlGnLEgAlbUA1Bxg0F70aih0Tiq8';
+// TODO: paste your Anthropic API key here.
+// Get one at https://console.anthropic.com/settings/keys
+const String kAnthropicApiKey = 'YOUR_ANTHROPIC_API_KEY';
 
-/// Backwards-compatible alias so older imports referencing kApiKey still work.
-const String kApiKey = kGeminiApiKey;
+/// Backwards-compatible aliases for older imports.
+const String kGeminiApiKey = kAnthropicApiKey;
+const String kApiKey = kAnthropicApiKey;
 
-const String kGeminiModel = 'gemini-2.5-flash';
+/// Claude model used for translation. Sonnet 4.6 is the best speed/intelligence
+/// balance for short translations and supports structured JSON output natively.
+const String kClaudeModel = 'claude-sonnet-4-6';
+
+const String _anthropicVersion = '2023-06-01';
 
 class TranslationException implements Exception {
   final String message;
@@ -22,19 +27,10 @@ class TranslationException implements Exception {
 class Translation {
   final String english;
   final String khmer;
-  final String detectedLang;
-
-  /// Short Khmer-language explanation of the word's meaning.
+  final String detectedLang; // 'en' or 'km'
   final String explanationKm;
-
-  /// English example sentence using the word.
   final String exampleEn;
-
-  /// Khmer translation of the English example sentence.
   final String exampleKm;
-
-  /// Word-by-word breakdown of the example sentence. Each entry maps a token
-  /// of the English sentence to its Khmer equivalent (`en` / `km`).
   final List<Map<String, String>> breakdown;
 
   const Translation({
@@ -48,11 +44,12 @@ class Translation {
   });
 }
 
-/// Wraps the Gemini generateContent endpoint.
+/// Wraps the Anthropic Messages API as a bilingual English/Khmer translator.
 ///
-/// One call returns: the translation, a short Khmer explanation, and an
-/// English example sentence. Results are cached in a Hive `Box<String>`
-/// (keyed `lang:text`, value is JSON) so repeated lookups don't re-bill.
+/// One call returns the translation, a Khmer explanation, an English example
+/// sentence, its Khmer translation, and a word-by-word breakdown. Results are
+/// cached in a Hive `Box<String>` (keyed `lang:text`, value is JSON) so
+/// repeated lookups don't re-bill.
 class TranslationService {
   TranslationService(this._cache, {http.Client? client})
       : _client = client ?? http.Client();
@@ -62,16 +59,17 @@ class TranslationService {
   final Box<String> _cache;
   final http.Client _client;
 
-  static const _base = 'https://generativelanguage.googleapis.com/v1beta';
+  static const _endpoint = 'https://api.anthropic.com/v1/messages';
 
   Future<Translation> translate(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) {
       throw TranslationException('Empty input');
     }
-    if (kGeminiApiKey.isEmpty || kGeminiApiKey == 'YOUR_GEMINI_API_KEY') {
+    if (kAnthropicApiKey.isEmpty ||
+        kAnthropicApiKey == 'YOUR_ANTHROPIC_API_KEY') {
       throw TranslationException(
-        'No API key configured. Open lib/services/translation_service.dart and set kGeminiApiKey.',
+        'No API key configured. Open lib/services/translation_service.dart and set kAnthropicApiKey.',
       );
     }
 
@@ -83,7 +81,7 @@ class TranslationService {
       if (fromCache != null) return fromCache;
     }
 
-    final result = await _askGemini(trimmed, hint: hint);
+    final result = await _askClaude(trimmed, hint: hint);
     final detected = result.detectedLang;
 
     final english = detected == 'en' ? trimmed : result.english;
@@ -139,100 +137,99 @@ class TranslationService {
         breakdown: breakdown,
       );
     } catch (_) {
-      // Legacy cache entries stored just the translated string — re-fetch.
       return null;
     }
   }
 
+  /// Local language hint — any Khmer codepoint -> 'km', else 'en'.
+  /// Claude still makes the final determination via the `source_lang` field.
   String _detect(String text) {
     final hasKhmer = RegExp(r'[ក-៿]').hasMatch(text);
     return hasKhmer ? 'km' : 'en';
   }
 
-  Future<Translation> _askGemini(
+  Future<Translation> _askClaude(
     String text, {
     required String hint,
   }) async {
-    final prompt = '''
+    const systemPrompt = '''
 You are a bilingual English-Khmer dictionary assistant.
 
-This app only supports English and Khmer. The user gave you a word or short phrase.
+This app only supports English and Khmer. The user gives you a word or short phrase. First identify the language of the input. Then produce a JSON object that matches the provided schema:
 
-First, identify the language of the input. Then produce a strict JSON object with these keys:
-- "source_lang": exactly one of "en" (English), "km" (Khmer), or "other" if it is neither English nor Khmer (for example Vietnamese, Thai, Chinese, Spanish, French, romanized Khmer, etc.).
+- "source_lang": exactly one of "en" (English), "km" (Khmer), or "other" if the input is neither English nor Khmer (for example Vietnamese, Thai, Chinese, Spanish, French, romanized Khmer, etc.).
 - "english": the English form of the word. Empty string if source_lang is "other".
 - "khmer": the Khmer form of the word in Khmer script. Empty string if source_lang is "other".
 - "explanation_km": a short, plain-Khmer explanation (one or two sentences) of what the word means, written entirely in Khmer script. Empty string if source_lang is "other".
 - "example_en": one natural English example sentence that uses the English form of the word. Empty string if source_lang is "other".
-- "example_km": the Khmer translation of "example_en", written entirely in Khmer script. It must be a faithful translation of the same sentence. Empty string if source_lang is "other".
-- "breakdown": an ordered array giving a word-by-word breakdown of "example_en". Each element is an object with two keys: "en" (one English word or short multi-word unit from the sentence, in the order it appears) and "km" (its Khmer equivalent in Khmer script). Cover every word in "example_en", including small function words like "the", "a", "is", in order. Use Khmer particles or short phrases where there is no exact one-word equivalent. Empty array if source_lang is "other".
+- "example_km": the Khmer translation of "example_en", written entirely in Khmer script. Must be a faithful translation of the same sentence. Empty string if source_lang is "other".
+- "breakdown": an ordered array giving a word-by-word breakdown of "example_en". Each element is an object with "en" (one English word or short multi-word unit from the sentence, in order) and "km" (its Khmer equivalent in Khmer script). Cover every word in "example_en" in order, including small function words like "the", "a", "is". Use Khmer particles or short phrases where there is no exact one-word equivalent. Empty array if source_lang is "other".
 
-Be strict: if the input is romanized/transliterated Khmer (Khmer written in Latin letters) or any other non-English non-Khmer language, set source_lang to "other".
-
-Return JSON only, no markdown, no backticks, no commentary.
-
-Input (script hint: $hint): $text
-''';
-
-    final uri = Uri.parse(
-      '$_base/models/$kGeminiModel:generateContent?key=$kGeminiApiKey',
-    );
+Be strict: if the input is romanized/transliterated Khmer (Khmer in Latin letters) or any other non-English non-Khmer language, set source_lang to "other".''';
 
     final body = jsonEncode({
-      'contents': [
-        {
-          'parts': [
-            {'text': prompt}
-          ]
-        }
-      ],
-      'generationConfig': {
-        'temperature': 0.2,
-        'maxOutputTokens': 512,
-        'responseMimeType': 'application/json',
-        'responseSchema': {
-          'type': 'OBJECT',
-          'properties': {
-            'source_lang': {
-              'type': 'STRING',
-              'enum': ['en', 'km', 'other'],
-            },
-            'english': {'type': 'STRING'},
-            'khmer': {'type': 'STRING'},
-            'explanation_km': {'type': 'STRING'},
-            'example_en': {'type': 'STRING'},
-            'example_km': {'type': 'STRING'},
-            'breakdown': {
-              'type': 'ARRAY',
-              'items': {
-                'type': 'OBJECT',
-                'properties': {
-                  'en': {'type': 'STRING'},
-                  'km': {'type': 'STRING'},
+      'model': kClaudeModel,
+      'max_tokens': 1024,
+      'system': systemPrompt,
+      'output_config': {
+        'format': {
+          'type': 'json_schema',
+          'schema': {
+            'type': 'object',
+            'properties': {
+              'source_lang': {
+                'type': 'string',
+                'enum': ['en', 'km', 'other'],
+              },
+              'english': {'type': 'string'},
+              'khmer': {'type': 'string'},
+              'explanation_km': {'type': 'string'},
+              'example_en': {'type': 'string'},
+              'example_km': {'type': 'string'},
+              'breakdown': {
+                'type': 'array',
+                'items': {
+                  'type': 'object',
+                  'properties': {
+                    'en': {'type': 'string'},
+                    'km': {'type': 'string'},
+                  },
+                  'required': ['en', 'km'],
+                  'additionalProperties': false,
                 },
-                'required': ['en', 'km'],
               },
             },
+            'required': [
+              'source_lang',
+              'english',
+              'khmer',
+              'explanation_km',
+              'example_en',
+              'example_km',
+              'breakdown',
+            ],
+            'additionalProperties': false,
           },
-          'required': [
-            'source_lang',
-            'english',
-            'khmer',
-            'explanation_km',
-            'example_en',
-            'example_km',
-            'breakdown',
-          ],
         },
       },
+      'messages': [
+        {
+          'role': 'user',
+          'content': 'Input (script hint: $hint): $text',
+        }
+      ],
     });
 
     final http.Response res;
     try {
       res = await _client
           .post(
-            uri,
-            headers: const {'Content-Type': 'application/json'},
+            Uri.parse(_endpoint),
+            headers: const {
+              'content-type': 'application/json',
+              'x-api-key': kAnthropicApiKey,
+              'anthropic-version': _anthropicVersion,
+            },
             body: body,
           )
           .timeout(const Duration(seconds: 25));
@@ -242,37 +239,36 @@ Input (script hint: $hint): $text
 
     final decoded = _decode(res);
 
-    final String raw;
+    final String rawJson;
     try {
-      final candidates = decoded['candidates'] as List?;
-      if (candidates == null || candidates.isEmpty) {
-        final blockReason =
-            decoded['promptFeedback']?['blockReason'] as String?;
-        throw TranslationException(
-          blockReason != null
-              ? 'Gemini blocked the request ($blockReason).'
-              : 'Gemini returned no candidates.',
-        );
+      final content = decoded['content'] as List?;
+      if (content == null || content.isEmpty) {
+        throw TranslationException('Claude returned no content.');
       }
-      final parts = candidates[0]['content']?['parts'] as List?;
-      if (parts == null || parts.isEmpty) {
-        throw TranslationException('Gemini returned an empty response.');
+      // Find the first text block. With output_config.format = json_schema,
+      // Claude returns a single text block whose body is valid JSON.
+      String? text;
+      for (final block in content) {
+        if (block is Map && block['type'] == 'text') {
+          text = block['text'] as String?;
+          break;
+        }
       }
-      raw = ((parts[0]['text'] as String?) ?? '').trim();
-      if (raw.isEmpty) {
-        throw TranslationException('Gemini returned an empty translation.');
+      if (text == null || text.trim().isEmpty) {
+        throw TranslationException('Claude returned an empty response.');
       }
+      rawJson = text.trim();
     } on TranslationException {
       rethrow;
     } catch (_) {
-      throw TranslationException('Unexpected response from Gemini API.');
+      throw TranslationException('Unexpected response from Claude API.');
     }
 
     final Map<String, dynamic> obj;
     try {
-      obj = jsonDecode(_stripFences(raw)) as Map<String, dynamic>;
+      obj = jsonDecode(_stripFences(rawJson)) as Map<String, dynamic>;
     } catch (_) {
-      throw TranslationException('Gemini did not return valid JSON.');
+      throw TranslationException('Claude did not return valid JSON.');
     }
 
     final detectedLang = ((obj['source_lang'] as String?) ?? '').toLowerCase();
@@ -307,7 +303,8 @@ Input (script hint: $hint): $text
     );
   }
 
-  /// Strip ```json ... ``` fences in case the model ignores responseMimeType.
+  /// Defensive: strip ```json ... ``` fences if the model ignores
+  /// the schema constraint and wraps the JSON in markdown.
   String _stripFences(String s) {
     var t = s.trim();
     if (t.startsWith('```')) {
@@ -342,24 +339,39 @@ Input (script hint: $hint): $text
     }
     if (res.statusCode == 400) {
       throw TranslationException(
-        'Bad request to Gemini (status 400). Check the model name and payload.',
+        'Bad request to Claude (status 400). Check the model name and payload.',
       );
     }
-    if (res.statusCode == 401 || res.statusCode == 403) {
+    if (res.statusCode == 401) {
       throw TranslationException(
-        'Invalid or unauthorized Gemini API key (status ${res.statusCode}).',
+        'Invalid Anthropic API key (status 401).',
+      );
+    }
+    if (res.statusCode == 403) {
+      throw TranslationException(
+        'API key lacks permission for this model (status 403).',
+      );
+    }
+    if (res.statusCode == 404) {
+      throw TranslationException(
+        'Unknown model "$kClaudeModel" (status 404).',
       );
     }
     if (res.statusCode == 429) {
-      throw TranslationException('Gemini quota or rate limit exhausted.');
+      throw TranslationException('Anthropic rate limit hit. Try again shortly.');
+    }
+    if (res.statusCode == 529) {
+      throw TranslationException(
+        'Anthropic API overloaded (status 529). Try again shortly.',
+      );
     }
     if (res.statusCode >= 500) {
       throw TranslationException(
-        'Gemini server error (status ${res.statusCode}). Try again.',
+        'Claude server error (status ${res.statusCode}). Try again.',
       );
     }
     throw TranslationException(
-      'Gemini API error (status ${res.statusCode}).',
+      'Claude API error (status ${res.statusCode}).',
     );
   }
 
